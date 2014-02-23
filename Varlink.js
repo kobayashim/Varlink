@@ -55,7 +55,7 @@ Varlink.prototype.bind = function() {
     if (!self.change_function) {
         self.change_function = function() {
             var key = this.dataset.varlink;
-            self._get_form_data(key)._change(key);
+            self._get_form_data(key, this)._change(key);
 
             // コールバック設定がある場合は実施
             if (this.dataset.varlinkCallback) {
@@ -90,7 +90,7 @@ Varlink.prototype.refresh = function() {
     for (var i = 0; i < elms.length; i++) {
         var key = elms[i].dataset.varlink;
         if (!got[key]) {
-            self._get_form_data(key)._change(key);
+            self._get_form_data(key, null)._change(key);
             got[key] = true;
         };
     };
@@ -115,7 +115,7 @@ Varlink.prototype.set = function(data) {
     return this;
 };
 
-// データの取得(リフレッシュなし)
+// データの取得
 Varlink.prototype.get = function(key) {
     if (key) {
         if (!this.val[key] || this.val[key].length == 0) {
@@ -139,7 +139,7 @@ Varlink.prototype.get = function(key) {
     };
 };
 
-// データの取得
+// リフレッシュ付きデータの取得
 Varlink.prototype.getWithRefresh = function(key) {
     return this.refresh().get(key);
 };
@@ -172,13 +172,13 @@ Varlink.prototype.clear = function() {
 // データによる表示切り替え
 Varlink.prototype._change = function(key) {
     var self = this;
-    var val = self.val[key];
 
     // 対象エレメントを取得しエレメント毎に処理
     var elems = document.getElementsByClassName(self.uid + '-' + key);
     for (var i = 0; i < elems.length; i++) {
+        var val = self.val[key];
         var elm = elems[i];
- 
+
         // 値のプレ設定
         if (!val || val.length == 0) {
             // 値が存在せず、デフォルト設定があった場合はその値で設定、なければ空配列
@@ -224,12 +224,12 @@ Varlink.prototype._change = function(key) {
 };
 
 // フォームデータの取得
-Varlink.prototype._get_form_data = function(key) {
+Varlink.prototype._get_form_data = function(key, target) {
     var self = this;
 
     // 対象エレメントを取得しエレメント毎に処理
     var val = [];
-    var elems = document.getElementsByClassName(self.uid + '-' + key);
+    var elems = (target && target.type != 'checkbox' && target.type != 'radio') ? [target] : document.getElementsByClassName(self.uid + '-' + key);
     for (var i = 0; i < elems.length; i++) {
         var v = [];
         var elm = elems[i];
@@ -251,7 +251,7 @@ Varlink.prototype._get_form_data = function(key) {
                         v.push(elm.value);
                     };
                 } else {
-                    if (elm.value != '') {
+                    if (elm.value) {
                         v.push(elm.value);
                     };
                 };
@@ -322,4 +322,3 @@ Varlink.prototype._removeDuplicate = function(ary) {
         return self.indexOf(a) === i;
     });
 };
-
