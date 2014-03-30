@@ -17,7 +17,6 @@ var Varlink = function Varlink(target, opt) {
         select_default  : -1,
         duplicate       : true,
         delimiter       : ',',
-        symbiosis       : false,
     };
     for (var key in d) {
         if (opt[key] == undefined) {
@@ -45,10 +44,6 @@ var Varlink = function Varlink(target, opt) {
 
 // 初期化
 Varlink.prototype.init = function() {
-    if (!this.opt.symbiosis) {
-        this.unbind();
-    };
-
     return this.bind().refresh();
 };
 
