@@ -1,5 +1,5 @@
 /*
- * Varlink 0.1.1
+ * Varlink 0.1.2
  * Copyright (c) 2013-2014 KOBAYASHI Mitsuru
  * https://github.com/kobayashim/varlink
  *
@@ -37,6 +37,7 @@ var Varlink = function Varlink(target, opt) {
     this.target = target;
     this.opt = opt;
     this.val = {};
+    this.callback = {};
     this.uid = uid;
 
     this.init();
@@ -61,15 +62,17 @@ Varlink.prototype.bind = function() {
             var key = this.dataset.varlink;
             self._get_form_data(key, this)._change(key);
 
-            // コールバック設定がある場合は実施
-            var obj = $(this);
-            var callback = obj.data('varlink-callback');
+            // setCallbackメソッドでのコールバック設定がある場合は実施
+            if (self.callback[key]) {
+                self.callback[key](key, self.get(key), self, this);
+            };
+
+            // 個別要素のコールバック設定がある場合は実施
+            var callback = this.dataset.varlinkCallback;
             if (callback) {
                 var type = self._getObjectType(callback);
                 try {
-                    if (type == 'Object' && obj.data('varlink-callback-method')) {
-                        callback[obj.data('varlink-callback-method')].call(callback, key, self.get(key), self, this);
-                    } else if (type == 'Function') {
+                    if (type == 'Function') {
                         callback(key, self.get(key), self, this);
                     } else {
                         eval('var func = ' + callback);
@@ -79,19 +82,67 @@ Varlink.prototype.bind = function() {
                     console.log(e);
                 };
             };
+
         };
     };
 
     // セレクタ用クラスを設定し、変更イベントを設定
-    $('[data-varlink]', $(this.target)).addClass(self.uid).unbind('change', self.change_function).bind('change', self.change_function).each(function() {
-        $(this).addClass(self.uid + '-' + this.dataset.varlink);
-    });
+    var elms = document.querySelectorAll(self.target + " [data-varlink]");
+    for (var i = 0; i < elms.length; i++) {
+        // クラスを追加
+        if (elms[i].className == '') {
+            elms[i].className = self.uid + ' ' + self.uid + '-' + elms[i].dataset.varlink;
+        } else {
+            var new_class = elms[i].className.split(' ').concat([self.uid, self.uid + '-' + elms[i].dataset.varlink]);
+            elms[i].className = self._removeDuplicate(new_class).join(' ');
+        };
+
+        // イベントを破棄・追加
+        elms[i].removeEventListener('change', self.change_function);
+        elms[i].addEventListener('change', self.change_function);
+    };
 
     // データ全項目再表示
     this.reshow();
 
     return this;
 };
+
+// イベントの削除
+Varlink.prototype.unbind = function() {
+    var self = this;
+
+    // セレクタ用クラスと変更イベントを全て削除
+    var elms = document.querySelectorAll(self.target + " [data-varlink]");
+    for (var i = 0; i < elms.length; i++) {
+        // セレクタ用クラスを削除
+        var cls = elms[i].className.split(' '), new_cls = [];
+        for (var j = 0; j < cls.length; j++) {
+            if (cls[j] != '' && cls[j].indexOf(self.uid) == -1) {
+                new_cls.push(cls[j]);
+            };
+        };
+        this.className  = (new_cls.length > 0) ? new_cls.join(' ') : '';
+
+        // 変更イベントを削除
+        elms[i].removeEventListener('change', self.change_function);
+    };
+
+    return this;
+};
+
+
+// コールバックの設定
+Varlink.prototype.setCallback = function(key, callback) {
+    if (!callback || callback == '') {
+        delete this.callback[key];
+    } else {
+        this.callback[key] = callback;
+    };
+
+    return this;
+};
+
 
 // データの再表示
 Varlink.prototype.reshow = function() {
@@ -103,23 +154,6 @@ Varlink.prototype.reshow = function() {
     return this;
 };
 
-// イベントの削除
-Varlink.prototype.unbind = function() {
-    var self = this;
-
-    // セレクタ用クラスと変更イベントを全て削除
-    $('[data-varlink]', $(self.target)).unbind('change').each(function() {
-        var cls = this.className.split(' '), new_cls = [];
-        for (var i = 0; i < cls.length; i++) {
-            if (!cls[i].match(/^varlink-/)) {
-                new_cls.push(cls[i]);
-            };
-        };
-        this.className  = (new_cls.length > 0) ? new_cls.join(' ') : '';
-    });
-
-    return this;
-};
 
 // データのリフレッシュ
 Varlink.prototype.refresh = function() {
@@ -130,8 +164,10 @@ Varlink.prototype.refresh = function() {
     for (var i = 0; i < elms.length; i++) {
         var key = elms[i].dataset.varlink;
         if (!got[key]) {
-            self._get_form_data(key, null)._change(key);
-            got[key] = true;
+            if (elms[i].nodeName == 'SELECT' || elms[i].nodeName == 'TEXTAREA' || elms[i].nodeName == 'INPUT') {
+                self._get_form_data(key, null)._change(key);
+                got[key] = true;
+            };
         };
     };
 
@@ -260,16 +296,10 @@ Varlink.prototype._change = function(key) {
     var self = this;
 
     // 対象エレメントを取得しエレメント毎に処理
-    var elems = document.getElementsByClassName(self.uid + '-' + key);
-    for (var i = 0; i < elems.length; i++) {
-        //var val = self.val[key];
-        var val = [];
-        if (self.val[key]) {
-            for (var j = 0; j < self.val[key].length; j++) {
-                val[j] = self.val[key][j];
-            };
-        };
-        var elm = elems[i];
+    var elms = document.getElementsByClassName(self.uid + '-' + key);
+    for (var i = 0; i < elms.length; i++) {
+        var val = (self.val[key]) ? self.val[key].concat() : [];
+        var elm = elms[i];
 
         // 値のプレ設定
         if (val.length == 0) {
@@ -297,14 +327,12 @@ Varlink.prototype._change = function(key) {
                 var opts = elm.getElementsByTagName('option');
                 var str = val.join(self.opt.delimiter) || null;
                 for (var j = 0; j < opts.length; j++) {
-                    //opts[j].selected = ((val.length > 0 && (val.indexOf(self._parseNumber(opts[j].value)) >= 0 || opts[j].value == str)) || (val.length == 0 && j == self.opt.select_default)) ? true : false;
                     opts[j].selected = ((val.length > 0 && (val.indexOf(opts[j].value) >= 0 || opts[j].value == str)) || (val.length == 0 && j == self.opt.select_default)) ? true : false;
                 };
                 break;
             case 'TEXTAREA' : 
             case 'INPUT' : 
                 if (elm.type == 'checkbox' || elm.type == 'radio') {
-                    //elm.checked = (val.length > 0 && val.indexOf(self._parseNumber(elm.value)) >= 0) ? true : false;
                     elm.checked = (val.length > 0 && val.indexOf(elm.value) >= 0) ? true : false;
                 } else {
                     var str = val.join(self.opt.delimiter) || '';
@@ -327,10 +355,10 @@ Varlink.prototype._get_form_data = function(key, target) {
 
     // 対象エレメントを取得しエレメント毎に処理
     var val = [];
-    var elems = (target && target.type != 'checkbox' && target.type != 'radio') ? [target] : document.getElementsByClassName(self.uid + '-' + key);
-    for (var i = 0; i < elems.length; i++) {
+    var elms = (target && target.type != 'checkbox' && target.type != 'radio') ? [target] : document.getElementsByClassName(self.uid + '-' + key);
+    for (var i = 0; i < elms.length; i++) {
         var v = [];
-        var elm = elems[i];
+        var elm = elms[i];
 
         // 対象エレメントのタグで処理を変更
         switch(elm.nodeName) {
@@ -345,7 +373,7 @@ Varlink.prototype._get_form_data = function(key, target) {
             case 'TEXTAREA' : 
             case 'INPUT' : 
                 if (elm.type == 'checkbox' || elm.type == 'radio') {
-                    if (elm.checked && elm.value != '') {
+                    if (elm.checked && elm.value != '' && (target == elm || target.value != elm.value)) {
                         v.push(elm.value);
                     };
                 } else {
@@ -373,7 +401,6 @@ Varlink.prototype._get_form_data = function(key, target) {
     };
 
     if (val.length > 0) {
-        //self.val[key] = (self.opt.duplicate) ? val.map(self._parseNumber).sort() : self._removeDuplicate(val.map(self._parseNumber)).sort();
         self.val[key] = (self.opt.duplicate) ? val.sort() : self._removeDuplicate(val).sort();
     } else {
         delete self.val[key];
@@ -418,10 +445,6 @@ Varlink.prototype._parseNumber = function(val) {
 
 // 重複削除
 Varlink.prototype._removeDuplicate = function(ary) {
-    //return ary.filter(function (a, i, self) {
-    //    return self.indexOf(a) === i;
-    //});
-
     var s = {}, u = [];
     for (var i = 0; i < ary.length; i++) {
         var v = ary[i];
